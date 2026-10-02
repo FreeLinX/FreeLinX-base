@@ -11,10 +11,7 @@ on a disk.
 Both boot on BIOS and on UEFI. Build and hand-test instructions are in
 [RELEASE.md](RELEASE.md).
 
-Base is a shell, not a desktop. There is no X server, no window manager, no X
-client and no browser in the image, and nothing graphical is started at boot —
-the way Ubuntu Server, Fedora minimal and Arch without a desktop are shells
-rather than installations of a window manager with a terminal emulator.
+Base is a shell, not a desktop.
 
 ## The installer
 
