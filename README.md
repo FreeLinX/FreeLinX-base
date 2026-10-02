@@ -1,6 +1,6 @@
 # FreeLinX base
 
-Current release: **1.0.8** ([release notes](RELEASE-NOTES.md)).
+Current release: **1.0.9** ([release notes](RELEASE-NOTES.md)).
 
 FreeLinX without a desktop: a shell on the console, `xpkg` for everything else.
 

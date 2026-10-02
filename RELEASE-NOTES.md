@@ -1,3 +1,26 @@
+# FreeLinX base 1.0.9
+
+```
+freelinx-base-x86_64.iso   278 MB   BIOS and UEFI
+sha256  ce6889c3afc43c208e63f7dc4417c41af8cb54706d7578502988044ef488d720
+```
+
+A fix for the console of 1.0.8, found by running it:
+
+- **The live shell on tty1 had no controlling terminal.** It printed
+  `sh: can't access tty; job control turned off`, and Ctrl-C did nothing. It
+  also started in `/var/service/console` instead of `/root`. It now runs under
+  `setsid -c`, from `/root`. The ttyS1 shell had the same fault and is fixed
+  the same way.
+- **ntpd and dbus wrote on the console** in the middle of what you were typing
+  (`ntp engine ready`, `peer ... now valid`, the bus address). ntpd logs to
+  `/var/log/ntpd.log` now, and dbus no longer prints its address.
+
+Tested in QEMU: Ctrl-C stops a running command, `jobs` and `kill %1` work, the
+shell starts in `/root`, and tty1 shows nothing but the shell.
+
+Everything else is as in 1.0.8, below.
+
 # FreeLinX base 1.0.8
 
 The first release of FreeLinX base: FreeLinX with no desktop. You get a shell
