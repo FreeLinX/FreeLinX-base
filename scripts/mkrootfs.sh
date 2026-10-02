@@ -249,7 +249,10 @@ cat >"$STAGE/var/service/console/run" <<'EOF'
 if [ -e /etc/flx-installed ]; then
     exec /usr/bin/getty -l /usr/libexec/toybox/login 38400 tty1 linux
 fi
-exec /bin/sh -l < /dev/tty1 > /dev/tty1 2>&1
+# setsid -c: the tty becomes the shell's controlling terminal (job control,
+# Ctrl-C).  runsv starts us in the service directory, so go home first.
+cd /root 2>/dev/null || cd /
+exec /usr/bin/setsid -c /bin/sh -l <>/dev/tty1 >&0 2>&1
 EOF
 chmod 755 "$STAGE/var/service/console/run"
 
