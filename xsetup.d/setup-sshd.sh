@@ -18,8 +18,7 @@ need_root
 
 choice=$(choose 'SSH daemon' \
 	none 'none, do not allow remote login' \
-	openssh 'openssh' \
-	dropbear 'dropbear, smaller')
+	openssh 'openssh')
 
 case $choice in
 none)

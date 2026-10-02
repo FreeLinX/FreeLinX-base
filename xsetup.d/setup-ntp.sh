@@ -44,11 +44,7 @@ ntpd)
 	# The clock is usually wrong on first boot, which makes every
 	# certificate check fail until it is roughly right.  Ask the network
 	# directly, once, to get over that.
-	if command -v ntpd >/dev/null 2>&1; then
-		info 'setting the clock once, before the service takes over'
-		ntpd -q -g 2>/dev/null ||
-			warn 'the clock could not be set. It may be wrong until ntpd syncs.'
-	fi
+	info 'ntpd sets the clock within a minute or two of starting'
 	;;
 none)
 	warn 'the clock will not be kept in sync.'

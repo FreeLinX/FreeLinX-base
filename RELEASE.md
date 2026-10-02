@@ -11,34 +11,23 @@ built: `src/rootfs`, `kernel/bzImage`, `stack/work/pkgs`, the host xpkg in
 `stack/work/sysroot`. It also needs `../ports/packages`. Base is cut from the
 same tree as the desktop release, so build and tag the desktop first.
 
-## Test in QEMU
+## Test
 
 ```sh
-SERIAL=1 OUT=/tmp/base-serial.iso sh build-base.sh
-qemu-img create -f qcow2 disk.qcow2 12G
-qemu-system-x86_64 -enable-kvm -cpu host -m 2048 -smp 2 \
-  -drive file=disk.qcow2,if=virtio,format=qcow2 \
-  -cdrom /tmp/base-serial.iso -boot d -vga std \
-  -serial file:ttyS0.log -serial unix:sh.sock,server,nowait \
-  -nic user,model=virtio-net-pci
+sh test-ui.sh && sh test-setup-disk.sh && sh test-destructive.sh
+SERIAL=1 OUT=out/freelinx-base-serial.iso sh build-base.sh
+sh test-xsetup-qemu.sh
+sh test-xsetup-qemu.sh --uefi
 ```
 
-ttyS0 carries the kernel log. ttyS1 (`sh.sock`) is a root shell on the live
-medium and a login prompt on an installed system. To install without questions:
+`test-xsetup-qemu.sh` boots the serial ISO and answers all 13 xsetup steps. It
+then boots the installed disk without the medium, logs in as the user and as
+root, and checks the hostname, time zone, groups, shell, sshd, the UUID pins,
+FLX_SYS and the framebuffer console. Last, it reboots once more and checks that
+a file written in the user's home is still there.
 
-```sh
-printf '%s\n' TZ_STR=UTC HOSTNAME=t ROOTPW=pw USERNAME=tester USERPW=pw > /root/preset
-flxinstall -p /root/preset -y /dev/vda < /dev/null   # unset answers default to no
-```
-
-Then boot the disk (`-boot c`, no `-cdrom`) and check the following:
-
-- `FLX_SYS persistent system engaged` is in the log.
-- root can log in.
-- `cat /sys/class/vtconsole/vtcon1/name` says `frame buffer device`. If it only
-  says `dummy device`, the kernel lost `CONFIG_SYSFB_SIMPLEFB` and the screen is
-  black.
-- A file in `/root` and an `xpkg install`ed package survive `reboot`.
+If the console check fails with `dummy device`, the kernel has lost
+`CONFIG_SYSFB_SIMPLEFB`, and the screen is black.
 
 ## Publish
 

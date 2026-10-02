@@ -82,6 +82,55 @@ ask() {
 }
 
 # ask_yes PROMPT [DEFAULT] - a yes/no question.  DEFAULT is y or n.
+# ask_secret PROMPT - like ask, but what is typed is not shown.  For
+# passwords: ask echoed them to the screen and the scrollback.
+ask_secret() {
+	printf '%s: ' "$1" >&2
+	# Only echo is turned off, so only echo is turned back on: restoring a
+	# saved `stty -g` state fails on Linux with this stty, and under set -e
+	# that failure ended the installer with the terminal left silent.
+	_secret_off=0
+	if [ -t 0 ] && stty -echo 2>/dev/null; then
+		_secret_off=1
+	elif [ -t 0 ]; then
+		printf '(stty is missing: what you type is shown) ' >&2
+	fi
+	if ! IFS= read -r _reply; then
+		[ "$_secret_off" = 1 ] && { stty echo 2>/dev/null || :; }
+		printf '\n' >&2
+		die 'input ended before anything was entered'
+	fi
+	[ "$_secret_off" = 1 ] && { stty echo 2>/dev/null || :; }
+	printf '\n' >&2
+	printf '%s' "$_reply"
+	_reply=
+}
+
+# set_password USER PASSWORD - store PASSWORD's SHA-512 crypt hash for USER
+# in /etc/shadow (an empty PASSWORD leaves the account without one).  The
+# password reaches flxhash on stdin, never on a command line.
+set_password() {
+	if [ -n "$2" ]; then
+		_h=$(printf '%s\n' "$2" | flxhash - 2>/dev/null) || _h=
+		case $_h in
+		'$6$'*) ;;
+		*) die "flxhash could not hash the password for $1" ;;
+		esac
+	else
+		_h=
+	fi
+	_day=$(( $(date +%s) / 86400 ))
+	if grep -q "^$1:" /etc/shadow; then
+		awk -F: -v OFS=: -v u="$1" -v h="$_h" -v d="$_day" \
+			'$1 == u { $2 = h; $3 = d } { print }' /etc/shadow >/etc/shadow.new
+	else
+		{ cat /etc/shadow; printf '%s:%s:%s:0:99999:7:::\n' "$1" "$_h" "$_day"; } >/etc/shadow.new
+	fi
+	cat /etc/shadow.new >/etc/shadow && rm -f /etc/shadow.new
+	chmod 600 /etc/shadow
+	_h=
+}
+
 ask_yes() {
 	_prompt=$1
 	_default=${2:-y}
@@ -323,5 +372,9 @@ step_start() {
 # done_message - printed by xsetup when every step has been run.
 done_message() {
 	printf '\n%s%sSetup complete.%s\n' "$C_BOLD" "$C_GREEN" "$C_OFF"
-	printf 'Reboot to start the installed system.\n'
+	if [ "$(cat /etc/xsetup-disk-mode 2>/dev/null)" = sys ]; then
+		printf 'Reboot, remove the medium, and boot from the disk.\n'
+	else
+		printf 'The system runs from RAM: nothing is kept after a reboot.\n'
+	fi
 }

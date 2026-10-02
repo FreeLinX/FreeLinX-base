@@ -100,6 +100,8 @@ fi
 	printf '# Written by xsetup.\n'
 	printf 'KEYMAP=%s\n' "$keymap"
 } >/etc/conf.d/loadkmap.conf
+# the layout a desktop installed later starts X with
+printf '%s\n' "$keymap" >/etc/flx-kbd
 ok "recorded $keymap in /etc/conf.d/loadkmap.conf"
 
 say ''

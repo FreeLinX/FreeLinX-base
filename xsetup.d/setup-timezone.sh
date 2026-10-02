@@ -165,6 +165,9 @@ src=$ZONEINFO/$zone
 info "setting the time zone to $zone"
 cp "$src" /etc/localtime
 printf '%s\n' "$zone" >/etc/timezone
+# /etc/TZ is what FreeLinX reads: /etc/profile exports TZ from it
+printf '%s\n' "$zone" >/etc/TZ
+export TZ="$zone"
 
 # /etc/localtime is a copy, so its mode should say so plainly.
 chmod 644 /etc/localtime

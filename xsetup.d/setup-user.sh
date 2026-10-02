@@ -56,35 +56,41 @@ if awk -F: -v u="$name" '$1 == u { found = 1 } END { exit !found }' /etc/passwd;
 	die "the account $name already exists"
 fi
 
-need_cmd flxuseradd 'the base/flxuseradd port'
-need_cmd flxpasswd 'the base/flxpasswd port'
+need_cmd flxhash 'flxhash'
 
 info "creating $name"
 
-# -d gives the home directory.  It used to be -m, which flxuseradd does not
-# have, and the whole step failed on every install with its usage printed:
-#
-#     flxuseradd: unrecognized option: m
-#     usage: flxuseradd -u NAME [-g GID] [-G GROUPS] [-d HOME] [-s SHELL]
-#
-# The usage is on two lines above the error and reads like a paragraph, so it
-# scrolls past; what the operator saw was an account that was not created.
-flxuseradd -d "/home/$name" -G wheel -s /bin/sh -u "$name" ||
-	die "flxuseradd could not create $name"
+# The account is written here, the same way the desktop installer writes it:
+# a group of its own, membership in wheel (doas) and the device groups, and
+# the image's login shell (/etc/flx-shell; mksh on base).  The home is made
+# in /home now and moved onto the FLX_HOME partition by setup-disk.
+uid=1000
+while grep -q "^[^:]*:[^:]*:$uid:" /etc/passwd; do uid=$((uid + 1)); done
+gid=$uid
+while grep -q "^[^:]*:[^:]*:$gid:" /etc/group; do gid=$((gid + 1)); done
+ushell=$(cat /etc/flx-shell 2>/dev/null)
+[ -x "${ushell:-/nonexistent}" ] || ushell=/bin/sh
+printf '%s:x:%s:\n' "$name" "$gid" >>/etc/group
+for g in wheel audio video input storage users; do
+	grep -q "^$g:" /etc/group || continue
+	awk -F: -v OFS=: -v g="$g" -v u="$name" \
+		'$1 == g { $4 = ($4 == "" ? u : $4 "," u) } { print }' /etc/group >/etc/group.new
+	cat /etc/group.new >/etc/group && rm -f /etc/group.new
+done
+printf '%s:x:%s:%s:%s:/home/%s:%s\n' "$name" "$uid" "$gid" "$name" "$name" "$ushell" >>/etc/passwd
+mkdir -p "/home/$name"
+chown "$uid:$gid" "/home/$name"
+chmod 700 "/home/$name"
 
-pw=$(ask "Password for $name" '')
+pw=$(ask_secret "Password for $name (nothing is shown)")
 if [ -z "$pw" ]; then
 	warn "$name will have an empty password, which allows anyone who reaches"
 	warn 'this machine to log in as them. Set one later with passwd if unsure.'
-	# An empty field, not an empty hash.  Locking the account would be
-	# quieter than what was just agreed, so flxpasswd is given -r and
-	# asked to do exactly this: set an empty password.
-	printf '%s:\n' "$name" | flxpasswd -e -r || :
+	set_password "$name" ''
 	warn "$name has no password. Anyone who reaches this machine can log"
 	warn 'in as them. Set one with: passwd '"$name"
 else
-	printf '%s:%s\n' "$name" "$pw" | flxpasswd -e -r ||
-		die 'flxpasswd refused the password'
+	set_password "$name" "$pw"
 	pw=''
 fi
 
@@ -92,13 +98,12 @@ if ask_yes 'Give this user sudo (as root)' y; then
 	# doas is the other option, per the Alpine flow.  Checked first because
 	# it is the one that can work on this image: sudo has no port here.
 	if command -v doas >/dev/null 2>&1; then
-		# doas reads a doas.conf, not a sudoers file, and it only
-		# grants to a group it can find in /etc/group.
-		{
-			printf '# Written by xsetup.\n'
-			printf 'permit persist :wheel\n'
-		} >/etc/doas.conf
-		chmod 644 /etc/doas.conf
+		# The image's doas.conf already has rules (power, network tools);
+		# writing the file anew would drop them.  Add the wheel rule only
+		# if it is not there.
+		grep -q '^permit persist :wheel$' /etc/doas.conf 2>/dev/null ||
+			printf 'permit persist :wheel\n' >>/etc/doas.conf
+		chmod 600 /etc/doas.conf
 		ok "$name can use doas: in wheel, and /etc/doas.conf permits it"
 	elif command -v sudo >/dev/null 2>&1; then
 		# The group is the point: flxuseradd already put $name in wheel

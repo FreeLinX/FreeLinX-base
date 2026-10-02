@@ -1,6 +1,6 @@
 # FreeLinX base
 
-Current release: **1.0.10** ([release notes](RELEASE-NOTES.md)).
+Current release: **1.0.11** ([release notes](RELEASE-NOTES.md)).
 
 FreeLinX without a desktop: a shell on the console, `xpkg` for everything else.
 
@@ -24,21 +24,41 @@ Mesa or fonts:
   `less`, `ip` (iproute2), `lsof`, and `mksh` as the login shell (arrow keys,
   history, Tab completion). `/bin/sh` stays the NetBSD sh for scripts.
 - **A C compiler:** `cc` (tcc) with the musl and kernel headers.
-- **Installing:** `flxinstall` puts the system on a disk, and `flxupgrade`
+- **Installing:** `xsetup` puts the system on a disk, and `flxupgrade`
   upgrades it from a newer ISO.
 
 Anything else comes from `xpkg install <name>`. The repository has 425 packages.
 
 ## Installing
 
-Boot the ISO. You get a root shell on tty1. Then:
+Boot the ISO. You get a root shell on tty1. Run:
 
 ```sh
-flxinstall
+xsetup
 ```
 
-This is the desktop's installer. On an image with no desktop it installs a
-console system without asking which kind you want. The disk is laid out as:
+`xsetup` is a manual installer: thirteen steps, one question at a time, and
+each step is recorded, so an install that is interrupted carries on where it
+stopped.
+
+```
+setup-keymap      setup-hostname    setup-interfaces  setup-passwd
+setup-timezone    setup-proxy       setup-ntp         setup-apkrepos
+setup-user        setup-sshd        setup-disk        setup-lbu
+setup-apkcache
+```
+
+```sh
+xsetup                  # every step not done yet, in order
+xsetup --list           # the steps
+xsetup --status         # which are done
+xsetup --reset NAME     # forget one step, so it runs again
+xsetup setup-sshd       # run one step on its own
+```
+
+`setup-disk` is the step that writes to a disk. It asks whether to run from RAM
+(nothing is written) or to install, then asks which disk, and it erases nothing
+until you type `yes`. An install lays the disk out as:
 
 | Partition | Contents |
 |---|---|
@@ -47,7 +67,10 @@ console system without asking which kind you want. The disk is laid out as:
 | FLX_SYS | persistent `/usr /etc /var /root /bin /sbin /lib`, so packages and settings survive a reboot |
 | FLX_HOME | `/home` |
 
-The installed system asks for a login on tty1, and on ttyS1 for a serial console.
+The system image is the running system with everything the earlier steps set,
+so the installed system starts with the same keymap, hostname, network, users,
+time zone and services. It asks for a login on tty1, and on ttyS1 for a serial
+console.
 
 ## Building
 
@@ -84,14 +107,21 @@ In QEMU/KVM with 2 GB RAM, for 1.0.8. The details are in
 
 Not tested yet: real hardware.
 
-## Not shipped any more
+## Tests
 
-`xsetup` (with `xsetup.d/`, `lib/ui.sh` and the `test-*.sh` suites that test it)
-was written for the old `src/rootfs`. Its disk mode copies the system to an ext4
-root and boots it with `root=UUID=`, but FreeLinX's `/init` never switches root:
-the system always runs from the initramfs. So it installed a disk that booted
-back into the unchanged live system. Its data mode relies on a `FREELINX_VAR`
-filesystem that `/init` does not mount. It is kept here and not put on the ISO.
+| Suite | What it covers |
+|---|---|
+| `test-ui.sh` | `lib/ui.sh`: the menus, the prompts, their edge cases |
+| `test-setup-disk.sh` | the disk step's conversation: layout, sizes, guards, dry runs |
+| `test-destructive.sh` | what an install does to bytes, with the image's own tools on image files |
+| `test-xsetup-qemu.sh` | all 13 steps in a VM, then boots the disk and checks the result |
+
+```sh
+sh test-ui.sh && sh test-setup-disk.sh && sh test-destructive.sh
+SERIAL=1 OUT=out/freelinx-base-serial.iso sh build-base.sh
+sh test-xsetup-qemu.sh            # BIOS
+sh test-xsetup-qemu.sh --uefi     # UEFI (OVMF)
+```
 
 ## Licence
 

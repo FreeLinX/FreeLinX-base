@@ -153,9 +153,10 @@ rm -f "$STAGE/etc/flx-desktop"
 #   less      pager (BSD-2-Clause option of its dual licence)
 #   iproute2  ip
 #   lsof
+#   stty      xsetup turns echo off with it while a password is typed
 #   mksh      the interactive shell: /bin/sh (NetBSD sh) is built without
 #             libedit, so arrows printed ^[[A and there was no history
-ADD='mandoc less iproute2 lsof mksh'
+ADD='mandoc less iproute2 lsof mksh stty'
 PORTS_PKGS=${PORTS_PKGS:-$ROOT/ports/packages}
 rm -f "$STAGE/usr/bin/man"
 set --
@@ -262,7 +263,7 @@ tar -xzf "$FILE_SRC" -C "$STAGE.magic"
 mv -f "$STAGE.magic/Magdir.mgc" "$STAGE/usr/share/misc/magic.mgc"
 rm -rf "$STAGE.magic"
 
-# mksh for people, /bin/sh for scripts.  /etc/flx-shell is what flxinstall
+# mksh for people, /bin/sh for scripts.  /etc/flx-shell is what xsetup
 # and flxadduser give new users and what /etc/profile sets SHELL to.
 printf '/bin/mksh\n' >"$STAGE/etc/flx-shell"
 printf '/bin/sh\n/bin/mksh\n' >"$STAGE/etc/shells"
@@ -283,11 +284,58 @@ printf '%s\n' '#!/bin/sh' \
 	'exit $r' >"$STAGE/usr/bin/which"
 chmod 755 "$STAGE/usr/bin/which"
 
+# --- 4c. the installer: xsetup -------------------------------------------------
+# Base installs with xsetup, step by step (setup-keymap ... setup-apkcache);
+# the desktop's flxinstall is not shipped.  xsetup lives in
+# /usr/libexec/xsetup (it finds lib/ and xsetup.d/ next to itself) and
+# /sbin/xsetup runs it.
+rm -f "$STAGE/sbin/flxinstall"
+X=$STAGE/usr/libexec/xsetup
+rm -rf "$X"
+mkdir -p "$X/lib" "$X/xsetup.d"
+cp "$HERE/../xsetup" "$X/xsetup"
+cp "$HERE/../lib/ui.sh" "$X/lib/"
+cp "$HERE"/../xsetup.d/*.sh "$X/xsetup.d/"
+chmod 755 "$X/xsetup"
+printf '%s\n' '#!/bin/sh' 'exec /usr/libexec/xsetup/xsetup "$@"' >"$STAGE/sbin/xsetup"
+chmod 755 "$STAGE/sbin/xsetup"
+
+# Services xsetup turns on and off: setup-ntp and setup-sshd link
+# /etc/svc/NAME into /var/service.  ntpd is on by default.
+mkdir -p "$STAGE/etc/svc"
+if [ -d "$STAGE/var/service/ntpd" ] && [ ! -L "$STAGE/var/service/ntpd" ]; then
+	mv "$STAGE/var/service/ntpd" "$STAGE/etc/svc/ntpd"
+fi
+ln -sfn /etc/svc/ntpd "$STAGE/var/service/ntpd"
+mkdir -p "$STAGE/etc/svc/openssh"
+printf '%s\n' '#!/bin/sh' \
+	'# OpenSSH server, enabled by xsetup setup-sshd.  Host keys are made on' \
+	'# first start if missing.' \
+	'ssh-keygen -A >/dev/null 2>&1' \
+	'exec /bin/sshd -D -e 2>>/var/log/sshd.log' >"$STAGE/etc/svc/openssh/run"
+chmod 755 "$STAGE/etc/svc/openssh/run"
+mkdir -p "$STAGE/etc/ssh" "$STAGE/var/empty"
+chmod 755 "$STAGE/var/empty"
+cat >"$STAGE/etc/ssh/sshd_config" <<'EOF'
+# FreeLinX sshd configuration.  See sshd_config(5).
+PermitRootLogin prohibit-password
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+Subsystem sftp /libexec/sftp-server
+EOF
+# the privilege-separation user: locked, and no shell to log in to
+grep -q '^sshd:' "$STAGE/etc/group" ||
+	printf 'sshd:x:22:\n' >>"$STAGE/etc/group"
+grep -q '^sshd:' "$STAGE/etc/passwd" ||
+	printf 'sshd:x:22:22:sshd privsep:/var/empty:/sbin/nologin\n' >>"$STAGE/etc/passwd"
+grep -q '^sshd:' "$STAGE/etc/shadow" ||
+	printf 'sshd:!:0:0:99999:7:::\n' >>"$STAGE/etc/shadow"
+
 # --- 5. console login --------------------------------------------------------
 # The banner, without the desktop's "right-click the desktop" line.
 for f in etc/issue etc/motd; do
 	[ -f "$STAGE/$f" ] || continue
-	sed -i 's/^ Right-click the desktop for the menu\. Install to disk: flxinstall (as root)\.$/ Install to disk: flxinstall (as root).  Manuals: man <command>./' \
+	sed -i 's/^ Right-click the desktop for the menu\. Install to disk: flxinstall (as root)\.$/ Install to disk: xsetup (as root).  Manuals: man <command>./' \
 		"$STAGE/$f"
 	grep -q 'desktop' "$STAGE/$f" && die "$f still talks about a desktop"
 done
@@ -309,7 +357,7 @@ cd /root 2>/dev/null || cd /
     printf '\033[H\033[2J'
     cat /etc/motd 2>/dev/null
     printf ' This is the live system: nothing is kept after a reboot until you\n'
-    printf ' install it with flxinstall.\n\n'
+    printf ' install it with xsetup.\n\n'
 } >/dev/tty1 2>/dev/null
 exec /usr/bin/setsid -c /bin/mksh -l <>/dev/tty1 >&0 2>&1
 EOF

@@ -11,7 +11,7 @@
 # same no-GNU gate.  It boots the same way the desktop ISO does: the whole
 # system is the initramfs, unpacked into ramfs, and /init runs runit.
 #
-# Installing is `flxinstall`, the installer the desktop ships.  It is the one
+# Installing is `xsetup`: the desktop's flxinstall under base's name.  It is the one
 # that matches /init's boot model (system image on the ESP, persistent
 # /usr /etc /var /root on FLX_SYS, /home on FLX_HOME, partitions pinned by
 # UUID) and the one `flxupgrade` upgrades.  On an image with no desktop it
@@ -141,7 +141,7 @@ timeout: 5
 $SERIAL_CONF
 interface_branding: FreeLinX $VERSION base
 
-/FreeLinX $VERSION base (installer: flxinstall)
+/FreeLinX $VERSION base (installer: xsetup)
     protocol: linux
     kernel_path: boot():/boot/bzImage
     module_path: boot():/boot/initramfs.img.gz

@@ -1,3 +1,55 @@
+# FreeLinX base 1.0.11
+
+```
+freelinx-base-x86_64.iso   279 MB   BIOS and UEFI
+sha256  @SHA@
+```
+
+**xsetup is the installer again.** `flxinstall` is no longer on the base image.
+
+xsetup is a manual installer: thirteen steps, one question at a time, and an
+interrupted install carries on where it stopped (`xsetup --status`,
+`xsetup --reset STEP`).
+
+```
+setup-keymap  setup-hostname  setup-interfaces  setup-passwd  setup-timezone
+setup-proxy   setup-ntp       setup-apkrepos    setup-user    setup-sshd
+setup-disk    setup-lbu       setup-apkcache
+```
+
+What had to change so that every step does what it says:
+
+- **setup-disk** installs what FreeLinX boots: the system image on the ESP
+  (the running system, with everything the earlier steps set), persistent
+  `/usr /etc /var /root /bin /sbin /lib` on FLX_SYS, `/home` on FLX_HOME, both
+  pinned by UUID, and Limine for UEFI and BIOS. Before, it copied the system to
+  an ext4 root that `/init` never switched to, so the installed disk booted back
+  into the live system. The "data" mode is gone, because `/init` never mounted
+  its partition.
+- **setup-passwd** and **setup-user** hid nothing: passwords were echoed on the
+  screen. They are not shown now; `stty` is on the image for that. Both used
+  `flxpasswd` and `flxuseradd`, which the image does not have. New users get mksh, wheel (doas) and the device
+  groups, and their home moves onto FLX_HOME.
+- **setup-user** no longer rewrites `/etc/doas.conf`, which dropped the
+  image's other rules.
+- **setup-interfaces** writes where the system reads: a static address or an
+  ignored interface goes into `/etc/dhcpcd.conf`, and Wi-Fi goes to the
+  networks the flxwifi service connects to at boot (0600). It used to write
+  `/etc/network/interfaces`, which nothing reads.
+- **setup-sshd** and **setup-ntp** have the service definitions they enable,
+  and sshd has its config, privilege-separation user and `/var/empty`.
+- **setup-timezone** writes `/etc/TZ`, which the system reads.
+- **setup-lbu** and **setup-apkcache** say what is kept and where, instead of
+  asking for a disk to put configuration on that nothing used.
+
+Tested in QEMU, BIOS and UEFI: `test-xsetup-qemu.sh` answers all 13 steps, then
+boots the disk with the medium removed and checks it:
+
+- the user and root log in, the user has mksh and wheel
+- the hostname and the time zone are the ones chosen
+- sshd and ntpd run, the partitions are pinned, the console is a framebuffer
+- a file in the user's home survives another reboot
+
 # FreeLinX base 1.0.10
 
 ```

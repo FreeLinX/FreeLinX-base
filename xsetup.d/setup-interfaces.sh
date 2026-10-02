@@ -20,18 +20,27 @@ fi
 need_root
 need_cmd ifconfig 'the net/ifconfig port'
 
-CONF=/etc/network/interfaces
-CONF_D=/etc/network/interfaces.d
-mkdir -p "$CONF_D"
+# Where the answers go: the files the running system reads.
+#
+#   /etc/dhcpcd.conf                   dhcpcd (started by /init) takes a
+#                                      static address from here, or leaves
+#                                      an interface alone
+#   /etc/wpa_supplicant/flxwifi.conf   the networks the flxwifi service
+#                                      connects to at boot (0600: passwords)
+DHCPCD_CONF=/etc/dhcpcd.conf
+NETWORKS=/etc/wpa_supplicant/flxwifi.conf
+BEGIN='# --- xsetup: begin ---'
+END='# --- xsetup: end ---'
 
-# sysfs is the only place that lists interfaces the kernel really has.
-# /sys/class/net/<name>/wireless is present only on wireless hardware.
+
 list_ifaces() {
 	for d in /sys/class/net/*; do
 		[ -e "$d" ] || continue
 		n=${d##*/}
 		# lo is not a question to ask anybody.
 		[ "$n" = lo ] && continue
+		# virtual interfaces (sit0, tunnels, bridges) have no device behind
+		[ -e "$d/device" ] || continue
 		printf '%s\n' "$n"
 	done
 }
@@ -41,7 +50,7 @@ ifaces=$(list_ifaces)
 if [ -z "$ifaces" ]; then
 	warn 'no network interface was found.'
 	warn 'The kernel may lack a driver, or this really is a machine with no'
-	warn 'network hardware. /etc/network/interfaces has not been changed.'
+	warn 'network hardware. Nothing has been changed.'
 # # `return`, not `exit`.  A step is sourced by the dispatcher, not run as its own
 # process, so `exit` here ends the whole installer rather than this step: the
 # step printed its line, said everything was fine, and dropped the operator back
@@ -54,116 +63,89 @@ fi
 info "interfaces found:"
 printf '%s\n' "$ifaces" | sed 's/^/  /'
 
-{
-	printf '# FreeLinX network interfaces.  Written by xsetup.\n'
-} >"$CONF"
-
-printf '\n' >>"$CONF"
-
+block=
 for n in $ifaces; do
-	is_wireless=no
-	[ -d "/sys/class/net/$n/wireless" ] && is_wireless=yes
-
-	printf '\n# %s%s\n' "$n" \
-		"$([ "$is_wireless" = yes ] && printf ' (wireless)' || true)" >>"$CONF"
-
+	if [ -d "/sys/class/net/$n/wireless" ]; then
+		continue
+	fi
 	method=$(choose "How should $n be configured?" \
 		dhcp 'automatic (DHCP)' \
 		static 'a fixed address' \
 		off 'leave it alone')
-
 	case $method in
 	dhcp)
-		printf 'iface %s inet dhcp\n' "$n" >>"$CONF"
 		ok "$n: dhcp"
 		;;
 	static)
-		addr=$(ask "  address for $n" '')
-		[ -n "$addr" ] || addr=$(ask "  address for $n, for example 192.168.1.10/24" '')
-		# An address with no prefix length is ambiguous, and a wrong guess
-		# is a network that silently does not work.
+		addr=$(ask "  address for $n, for example 192.168.1.10/24" '')
+		[ -n "$addr" ] || die "no address was given for $n"
 		case $addr in
 		*/*) ;;
 		*) addr=$addr/24 ;;
 		esac
-
 		gw=$(ask '  default gateway (blank for none)' '')
 		ns=$(ask '  nameserver (blank for none)' '')
-
-		printf 'iface %s inet static\n' "$n" >>"$CONF"
-		printf '\taddress %s\n' "$addr" >>"$CONF"
-		[ -n "$gw" ] && printf '\tgateway %s\n' "$gw" >>"$CONF"
-		[ -n "$ns" ] && printf '\tdns-nameservers %s\n' "$ns" >>"$CONF"
+		block="${block}interface $n
+static ip_address=$addr
+${gw:+static routers=$gw
+}${ns:+static domain_name_servers=$ns
+}"
 		ok "$n: static $addr"
 		;;
 	off)
-		printf '#iface %s inet dhcp\n' "$n" >>"$CONF"
+		block="${block}denyinterfaces $n
+"
 		ok "$n: not configured"
 		;;
 	esac
 done
 
-# Wi-Fi, if there is any.  Kept out of the loop above because it needs a
-# passphrase and because one supplicant config serves every wireless
-# interface.
-if printf '%s\n' "$ifaces" | while read -r n; do
-	[ -d "/sys/class/net/$n/wireless" ] && printf 'yes\n'
-done | grep -q yes; then
+# Rewrite only our block of dhcpcd.conf, so whatever else is in it stays.
+if [ -f "$DHCPCD_CONF" ]; then
+	awk -v b="$BEGIN" -v e="$END" '$0 == b { skip = 1 } !skip { print } $0 == e { skip = 0 }' \
+		"$DHCPCD_CONF" >"$DHCPCD_CONF.new"
+else
+	: >"$DHCPCD_CONF.new"
+fi
+if [ -n "$block" ]; then
+	printf '%s\n%s%s\n' "$BEGIN" "$block" "$END" >>"$DHCPCD_CONF.new"
+fi
+mv -f "$DHCPCD_CONF.new" "$DHCPCD_CONF"
 
-	printf '\n# wireless\n' >>"$CONF"
-
-	if ask_yes 'Set up Wi-Fi now' y; then
-		need_cmd wpa_supplicant 'the net/wpa_supplicant port'
-
-		ssid=$(ask 'Wi-Fi network name (SSID)' '')
-		if [ -n "$ssid" ]; then
-			psk=$(ask 'Wi-Fi passphrase' '')
-			# wpa_supplicant will not accept a WPA passphrase that is
-			# too short, and it silently ignores an empty one, so both
-			# are refused here where the message can explain.
-			if [ -z "$psk" ]; then
-				warn 'an open network needs no passphrase here'
-			elif [ "${#psk}" -lt 8 ]; then
-				die 'a WPA passphrase is at least 8 characters'
-			fi
-
-			mkdir -p /etc/wpa_supplicant
-			umask 077
-			{
-				cat <<EOF
-# Written by xsetup.  Holds a passphrase: mode 0600.
-ctrl_interface=/var/run/wpa_supplicant
-eapol_version=2
-ap_scan=1
-
-network={
-	ssid="$ssid"
-EOF
-				# wpa_supplicant derives the 256-bit PSK itself, so the
-				# derived form goes in rather than the plain text.
-				# If it cannot be derived, the plain passphrase is
-				# still accepted, quoted.
-				if [ -n "$psk" ]; then
-					hashed=$(wpa_passphrase "$ssid" "$psk" 2>/dev/null |
-						sed -n 's/^[[:space:]]*psk=//p' | head -1)
-					if [ -n "$hashed" ]; then
-						printf '\tpsk=%s\n' "$hashed"
-					else
-						printf '\tpsk="%s"\n' "$psk"
-					fi
-				fi
-				printf '}\n'
-			} >/etc/wpa_supplicant/wpa_supplicant.conf
-			umask 022
-			chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
-			ok "Wi-Fi configured for $ssid"
+wifi=
+for n in $ifaces; do
+	[ -d "/sys/class/net/$n/wireless" ] && wifi=$n && break
+done
+if [ -n "$wifi" ] && ask_yes "Set up Wi-Fi on $wifi now" y; then
+	ssid=$(ask 'Wi-Fi network name (SSID)' '')
+	if [ -n "$ssid" ]; then
+		psk=$(ask_secret 'Wi-Fi passphrase (blank for an open network; nothing is shown)')
+		# The SSID as hex: SSIDs are arbitrary bytes (quotes, UTF-8, ...).
+		hex=$(printf '%s' "$ssid" | od -An -tx1 | tr -d ' \n')
+		if [ -n "$psk" ]; then
+			[ "${#psk}" -ge 8 ] && [ "${#psk}" -le 63 ] ||
+				die 'a WPA passphrase is 8 to 63 characters'
+			case $psk in
+			*'
+'*) die 'the passphrase may not contain a newline' ;;
+			esac
+			net=$(printf ' ssid=%s\n psk="%s"\n sae_password="%s"\n key_mgmt=WPA-PSK WPA-PSK-SHA256 SAE\n ieee80211w=1\n' \
+				"$hex" "$psk" "$psk")
+		else
+			net=$(printf ' ssid=%s\n key_mgmt=NONE\n' "$hex")
+		fi
+		psk=
+		mkdir -p "${NETWORKS%/*}"
+		# umask and the redirection in one subshell, or the file is 0644
+		( umask 077; printf 'network={\n%s\n}\n' "$net" >"$NETWORKS" ) ||
+			die "could not write $NETWORKS"
+		chmod 600 "$NETWORKS"
+		net=
+		ok "Wi-Fi saved for $ssid: the flxwifi service connects at boot"
+		if command -v flxwifi >/dev/null 2>&1; then
+			sv restart /var/service/flxwifi >/dev/null 2>&1 || :
 		fi
 	fi
 fi
 
-if [ -d /var/service ]; then
-	ln -sfn /etc/svc/dhcpcd /var/service/dhcpcd 2>/dev/null || :
-	ln -sfn /etc/svc/wpa_supplicant /var/service/wpa_supplicant 2>/dev/null || :
-fi
-
-ok "written to $CONF"
+ok "network settings written"
