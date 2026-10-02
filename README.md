@@ -1,6 +1,6 @@
 # FreeLinX base
 
-Current release: **1.0.9** ([release notes](RELEASE-NOTES.md)).
+Current release: **1.0.10** ([release notes](RELEASE-NOTES.md)).
 
 FreeLinX without a desktop: a shell on the console, `xpkg` for everything else.
 
@@ -21,7 +21,9 @@ Mesa or fonts:
   doas, OpenSSH (ssh and sshd), curl, git, tmux, htop, nnn, vim (also as `vi`),
   bc, e2fsprogs, dosfstools.
 - **Added for the console:** `man` (mandoc, with about 200 NetBSD manual pages),
-  `less`, `ip` (iproute2), `lsof`.
+  `less`, `ip` (iproute2), `lsof`, and `mksh` as the login shell (arrow keys,
+  history, Tab completion). `/bin/sh` stays the NetBSD sh for scripts.
+- **A C compiler:** `cc` (tcc) with the musl and kernel headers.
 - **Installing:** `flxinstall` puts the system on a disk, and `flxupgrade`
   upgrades it from a newer ISO.
 

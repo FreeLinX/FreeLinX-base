@@ -153,12 +153,14 @@ rm -f "$STAGE/etc/flx-desktop"
 #   less      pager (BSD-2-Clause option of its dual licence)
 #   iproute2  ip
 #   lsof
-ADD='mandoc less iproute2 lsof'
+#   mksh      the interactive shell: /bin/sh (NetBSD sh) is built without
+#             libedit, so arrows printed ^[[A and there was no history
+ADD='mandoc less iproute2 lsof mksh'
 PORTS_PKGS=${PORTS_PKGS:-$ROOT/ports/packages}
 rm -f "$STAGE/usr/bin/man"
 set --
 for p in $ADD; do
-	f=$(ls "$PORTS_PKGS/$p"-[0-9]*.xpkg 2>/dev/null | sort -V | tail -1)
+	f=$(ls "$PORTS_PKGS/$p"-[0-9A-Z]*.xpkg 2>/dev/null | sort -V | tail -1)
 	[ -n "$f" ] || die "no $p package in $PORTS_PKGS"
 	set -- "$@" "$f"
 done
@@ -220,6 +222,56 @@ else
 	say "    no NetBSD source tree at $NETBSD_SRC: manual pages not added"
 fi
 
+# cc (tcc) that compiles: the desktop shipped tcc with no libc headers, no
+# crt*.o and no libtcc1.a, so `cc hello.c` failed on stdio.h and crt1.o.
+# musl's headers (installed from the musl tree the stack was built with), the
+# kernel UAPI headers, musl's start files, and the tcc port with its runtime.
+MUSL_SRC=${MUSL_SRC:-$DESK/stack/work/src/musl/musl-1.2.5}
+SYSROOT=$DESK/stack/work/sysroot
+[ -f "$MUSL_SRC/config.mak" ] || die "no configured musl tree at $MUSL_SRC"
+make -s -C "$MUSL_SRC" DESTDIR="$STAGE" install-headers >/dev/null ||
+	die 'installing the musl headers failed'
+for d in linux asm asm-generic; do
+	cp -R "$SYSROOT/usr/include/$d" "$STAGE/usr/include/"
+done
+for o in crt1.o crti.o crtn.o Scrt1.o rcrt1.o; do
+	cp "$SYSROOT/usr/lib/$o" "$STAGE/usr/lib/$o"
+done
+rm -f "$STAGE/usr/bin/tcc"
+f=$(ls "$PORTS_PKGS"/tcc-[0-9]*.xpkg 2>/dev/null | sort -V | tail -1)
+[ -n "$f" ] || die "no tcc package in $PORTS_PKGS"
+xpkg --quiet --no-scripts install "$f" >>"$STAGE.add.log" 2>&1 || {
+	tail -5 "$STAGE.add.log" >&2
+	die 'installing tcc failed'
+}
+ln -sf tcc "$STAGE/usr/bin/cc"
+say "    C compiler: tcc, musl headers ($(du -sh "$STAGE/usr/include" | cut -f1))"
+
+# file(1) is 5.46 but the desktop's magic.mgc came from an older file, so
+# every `file` said "not a multiple of 432".  Compile the database from the
+# 5.46 sources with this file binary (dynamic musl: run it with the stage's
+# own loader).
+FILE_SRC=${FILE_SRC:-$ROOT/ports/dist/file-5.46.tar.gz}
+[ -f "$FILE_SRC" ] || die "no file source at $FILE_SRC (for magic.mgc)"
+mkdir -p "$STAGE.magic"
+tar -xzf "$FILE_SRC" -C "$STAGE.magic"
+( cd "$STAGE.magic" &&
+  "$STAGE/lib/ld-musl-x86_64.so.1" --library-path "$STAGE/usr/lib:$STAGE/lib" \
+	"$STAGE/usr/bin/file" -C -m file-*/magic/Magdir ) ||
+	die 'compiling magic.mgc failed'
+mv -f "$STAGE.magic/Magdir.mgc" "$STAGE/usr/share/misc/magic.mgc"
+rm -rf "$STAGE.magic"
+
+# mksh for people, /bin/sh for scripts.  /etc/flx-shell is what flxinstall
+# and flxadduser give new users and what /etc/profile sets SHELL to.
+printf '/bin/mksh\n' >"$STAGE/etc/flx-shell"
+printf '/bin/sh\n/bin/mksh\n' >"$STAGE/etc/shells"
+sed -i -e 's#^\(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:\)/bin/sh$#\1/bin/mksh#' \
+	-e 's#^\(live:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:\)/bin/sh$#\1/bin/mksh#' "$STAGE/etc/passwd"
+grep -q '^root:.*:/bin/mksh$' "$STAGE/etc/passwd" || die "root's shell is not mksh"
+sed -i 's#setsid -c /bin/sh -l#setsid -c /bin/mksh -l#' "$STAGE/var/service/shell/run"
+grep -q '/bin/mksh -l' "$STAGE/var/service/shell/run" || die 'the serial shell is not mksh'
+
 # which: the shell has `command -v`; scripts and people still type which.
 printf '%s\n' '#!/bin/sh' \
 	'# which NAME... - the path the shell would run for each NAME.' \
@@ -252,7 +304,14 @@ fi
 # setsid -c: the tty becomes the shell's controlling terminal (job control,
 # Ctrl-C).  runsv starts us in the service directory, so go home first.
 cd /root 2>/dev/null || cd /
-exec /usr/bin/setsid -c /bin/sh -l <>/dev/tty1 >&0 2>&1
+# There is no login on the live medium, so nothing shows the banner: show it.
+{
+    printf '\033[H\033[2J'
+    cat /etc/motd 2>/dev/null
+    printf ' This is the live system: nothing is kept after a reboot until you\n'
+    printf ' install it with flxinstall.\n\n'
+} >/dev/tty1 2>/dev/null
+exec /usr/bin/setsid -c /bin/mksh -l <>/dev/tty1 >&0 2>&1
 EOF
 chmod 755 "$STAGE/var/service/console/run"
 
