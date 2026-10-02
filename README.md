@@ -1,139 +1,91 @@
 # FreeLinX base
 
-The two non-graphical FreeLinX images, and the installer that puts one of them
-on a disk.
-
-| Image | What it is |
-|---|---|
-| `out/base.iso` | the installer: the whole system plus `/installer/xsetup` |
-| `out/base (boot only).iso` | rescue: the system with no installer on it |
-
-Both boot on BIOS and on UEFI. Build and hand-test instructions are in
-[RELEASE.md](RELEASE.md).
-
-Base is a shell, not a desktop.
-
-## The installer
-
-`xsetup` runs thirteen steps and records each one, so an interrupted install
-resumes without asking again about something already answered.
+FreeLinX without a desktop: a shell on the console, `xpkg` for everything else.
 
 ```
-setup-keymap  setup-hostname  setup-interfaces  setup-passwd  setup-timezone
-setup-proxy   setup-ntp       setup-apkrepos    setup-user    setup-sshd
-setup-disk    setup-lbu       setup-apkcache
+out/freelinx-base-x86_64.iso     278 MB, boots on BIOS and UEFI
 ```
+
+Base is the desktop release's system with the desktop taken out. It has the same
+Linux 6.18 kernel, the same NetBSD userland, the same OpenSSL, OpenSSH and xpkg,
+and it passes the same no-GNU gate (`check-nognu.sh`, 0 failing).
+
+## What is on it
+
+25 packages from the desktop stack plus four console ports, with no X11, GTK,
+Mesa or fonts:
+
+- **System:** runit, mdevd, dhcpcd, wpa_supplicant and `flxwifi`, ntpd, dbus,
+  doas, OpenSSH (ssh and sshd), curl, git, tmux, htop, nnn, vim (also as `vi`),
+  bc, e2fsprogs, dosfstools.
+- **Added for the console:** `man` (mandoc, with about 200 NetBSD manual pages),
+  `less`, `ip` (iproute2), `lsof`.
+- **Installing:** `flxinstall` puts the system on a disk, and `flxupgrade`
+  upgrades it from a newer ISO.
+
+Anything else comes from `xpkg install <name>`. The repository has 425 packages.
+
+## Installing
+
+Boot the ISO. You get a root shell on tty1. Then:
 
 ```sh
-xsetup                       # every step not done yet, in order
-xsetup --list                # the steps
-xsetup --status              # which are done
-xsetup --reset NAME          # forget one step and run it again
-xsetup setup-disk            # run one step by name
+flxinstall
 ```
 
-`setup-disk` is the irreversible one. It erases the disk it is given, and asks
-you to type `yes` in as many words before it will.
+This is the desktop's installer. On an image with no desktop it installs a
+console system without asking which kind you want. The disk is laid out as:
 
-*RIGHT NOW DONT WORK*
-
-
-## Tests
-
-| Suite | What it covers |
+| Partition | Contents |
 |---|---|
-| `test-ui.sh` | `lib/ui.sh`: the menus, the prompts, their edge cases |
-| `test-setup-disk.sh` | the disk step's conversation — geometry, guards, dry runs |
-| `test-destructive.sh` | the installer's commands, run against image files |
-| `test-destructive-qemu.sh` | a real install onto a real disk, in a VM |
-| `test-live-boot.sh` | boots the shipped ISO and asks the running system questions |
+| ESP (1 GB) | the kernel and the system image, booted by Limine on BIOS and UEFI |
+| BIOS boot | Limine's BIOS stage |
+| FLX_SYS | persistent `/usr /etc /var /root /bin /sbin /lib`, so packages and settings survive a reboot |
+| FLX_HOME | `/home` |
 
+The installed system asks for a login on tty1, and on ttyS1 for a serial console.
+
+## Building
+
+```sh
+sh build-base.sh
 ```
-sh test-ui.sh                # 56 passed, 0 failed
-sh test-setup-disk.sh        # 39 passed, 0 failed
-sh test-destructive.sh       # 58 passed, 0 failed
-```
 
-The last two need QEMU and take minutes.
+It needs a built FreeLinX-desk checkout next to this one (`../Desktop-test`:
+`src/rootfs`, `kernel/bzImage` and the stack packages) and `../ports`. It does
+the following:
 
-A test here is expected to fail when the code it covers is put back. Several of
-them were written that way: each was checked by breaking the thing it describes
-and confirming the suite caught it, because a check that cannot find what it
-looks for reports it absent, which reads exactly like the bug it exists to catch.
+1. `scripts/mkrootfs.sh` copies the desktop rootfs and registers every stack
+   package. It runs `xpkg remove` on the 100 desktop packages, so each takes its
+   own files, and deletes the desktop files no package owns. It adds the console
+   ports and the manual pages. It fails if any program needs a library that is
+   gone, if any graphical program is left, or if `check-nognu` finds anything.
+2. Firmware from `firmware-<kver>.tar.xz`, if it is there.
+3. The system is packed as one xz initramfs and put on a Limine ISO labelled
+   `FREELINX_LIVE`, which is the label `flxupgrade` looks for.
 
-## What has been fixed
+`SERIAL=1 sh build-base.sh` also puts the console on ttyS0, for testing in QEMU.
 
-Twenty commits, oldest first. The ones that changed behaviour for anybody
-running the installer:
+## Tested
 
-**The images**
+In QEMU, KVM, std VGA, 2 GB, on 2026-10-02:
 
-- The kernel and initramfs now live on the boot chain on the ESP, and the suite
-  tests what the code does rather than what it claims.
-- `base.iso` was 226 MB with a desktop in it and 113 MB without. 413 paths are
-  removed by `scripts/strip-desktop.sh`, which runs as part of every build, so
-  the desktop cannot come back by being forgotten.
-- Data mode was rewritten: one partition, no boot chain, no system, labelled
-  `FREELINX_VAR`, which is the label `/init` mounts at `/var`.
-- A console that works. Limine refused the framebuffer handover, the kernel fell
-  back to a dummy console, and tty1 was discarded. Two causes, both in
-  `limine.conf`: the key is `textmode`, not `text_mode`, and it has to be inside
-  the menu entry. There is no framebuffer console in the kernel config, and that
-  is deliberate — with no X client nothing loads a DRM driver, so vgacon binds
-  the console alone and tty1 works.
+- The live ISO boots to a framebuffer console, and dhcpcd gets an address.
+- `flxinstall` with a preset installs to a 12 GB virtio disk.
+- The installed disk boots, FLX_SYS engages (7 trees bound), and the login works.
+- `xpkg update` and `xpkg install jq` fetch over HTTPS from the signed repository.
+- A file in `/root` and the installed package are still there after a reboot.
 
-**The installer**
+Not tested: real hardware.
 
-- `xsetup` read its own step names as the answers to its questions. Every step
-  ran and each was answered with the name of the step after it.
-- A sourced step that finished with `exit` ended the whole installer. It had
-  printed its line and said everything was fine, then dropped the operator at the
-  shell with steps 7 to 13 never run and nothing marked done.
-- `ask_yes` ignored its default: an empty answer took yes whatever the default
-  was, in five of its eight calls.
-- The timezone menu returned a region name as another region's label. A single
-  zone region — `UCT`, `Zulu`, `W-SU` — ended the installer.
-- `sort` was handed a file rather than a pipe. This system's `sort` opens
-  `/dev/stdin`, which is unreachable; `cut`, `grep`, `sed`, `awk`, `head`,
-  `tail`, `tr`, `wc`, `uniq` and `comm` do not.
-- `setup-user` passed `-m` to `flxuseradd`, which has no `-m`. That is
-  `adduser(8)`'s flag. The step died on every install, having created nothing,
-  with the usage printed directly above the error where it read like a paragraph
-  and scrolled past.
-- A user name in upper case ended the installer. It is folded to lower case now
-  and the fold is printed, because lower case is right to store and not a reason
-  to discard what somebody typed.
-- `setup-disk` could not find the medium it was running from. It searched two
-  levels up from `$(dirname "$0")`, but a step is *sourced*, so `$0` is the
-  dispatcher's path and two levels up from `/media/flx/installer/xsetup` is
-  `/media`. Every lookup missed a mounted, readable medium.
-- Every menu whose options filled the last row killed the installer. `xsetup`
-  runs `set -eu`, and the subshell that prints a menu ended with
-  `[ "$_col" -ne 0 ] && printf '\n' >&2`, which returns 1 when the count is a
-  multiple of the row width. Five options worked, six did not, twenty-four did
-  not. The menu printed and the prompt never did, so whatever was typed next went
-  to the shell.
+## Not shipped any more
 
-## Known gaps
-
-Not finished, and not pretended to be:
-
-- **UEFI has no on-screen console.** Limine's `textmode` is BIOS-only; UEFI
-  always reports `VIDEO_TYPE_EFI`. The serial console works and the installer is
-  usable over it, but the screen stays black after Limine.
-- **Arrow keys do nothing.** A Linux VT does not send escape sequences for them.
-  Answering an installer prompt needs a shell with terminfo line editing and a
-  `TERM` that defines `kcuu1`.
-- **The keymap choice is recorded, not applied.** Linux removed `KDSETKEYMAP`
-  and `struct kbentry`, so there is no interface for a running program to
-  re-lay-out a text console. The step says so rather than appearing to change it.
-- **Data mode has never had a clean QEMU run.** Its logic is proven in isolation
-  only.
-- **`/proc/self/fd` is permission-denied in the guest.** This is why the `sort`
-  bug above existed and it is worked around rather than fixed; other programs
-  may depend on it.
-- **The port set is incomplete.** Seven ports are missing and five fail to build.
-  That is a separate pass and it is not done.
+`xsetup` (with `xsetup.d/`, `lib/ui.sh` and the `test-*.sh` suites that test it)
+was written for the old `src/rootfs`. Its disk mode copies the system to an ext4
+root and boots it with `root=UUID=`, but FreeLinX's `/init` never switches root:
+the system always runs from the initramfs. So it installed a disk that booted
+back into the unchanged live system. Its data mode relies on a `FREELINX_VAR`
+filesystem that `/init` does not mount. It is kept here and not put on the ISO.
 
 ## Licence
 
