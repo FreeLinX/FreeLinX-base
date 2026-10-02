@@ -38,6 +38,9 @@ xsetup setup-disk            # run one step by name
 `setup-disk` is the irreversible one. It erases the disk it is given, and asks
 you to type `yes` in as many words before it will.
 
+*RIGHT NOW DONT WORK*
+
+
 ## Tests
 
 | Suite | What it covers |
