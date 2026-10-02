@@ -128,7 +128,7 @@ truncate -s 4G "$disk" || exit 2
 # xsetup.d/setup-disk.sh reads them from.  --show prints a human-readable summary
 # and no keys at all, so a test that parses --show finds nothing and concludes
 # the partitioning failed.
-if ! "$FLXPART" -q --create-standard --esp-size 256 "$disk" >"$TMP/layout.txt" \
+if ! "$FLXPART" -q --create-standard --no-flx-sys --esp-size 256 "$disk" >"$TMP/layout.txt" \
     2>"$TMP/partition.err"; then
 	no 'flxpart --create-standard succeeds' "$(head -2 "$TMP/partition.err")"
 else

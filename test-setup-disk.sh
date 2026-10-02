@@ -18,7 +18,7 @@ set -u
 BASE=$(cd "$(dirname "$0")" && pwd)
 STEP=$BASE/xsetup.d/setup-disk.sh
 UI=$BASE/lib/ui.sh
-ROOTFS=${ROOTFS:-/home/kanan/FreeLinX/src/rootfs}
+ROOTFS=${ROOTFS:-$(cd "$BASE/.." && pwd)/src/rootfs}
 FLXPART=${FLXPART:-$ROOTFS/sbin/flxpart}
 
 TMP=$(mktemp -d)

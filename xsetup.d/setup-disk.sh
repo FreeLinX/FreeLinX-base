@@ -474,11 +474,11 @@ if [ "$DRY" -eq 1 ]; then
 	# flxpart computes from the device size without writing.  That is the
 	# only honest way to show the geometry: the real numbers come from a
 	# real table, and a dry run says so rather than inventing LBAs.
-	layout=$(flxpart --create-standard --esp-size "$esp_mb" --dry-run "$dev") ||
+	layout=$(flxpart --create-standard --no-flx-sys --esp-size "$esp_mb" --dry-run "$dev") ||
 		die "flxpart could not compute a layout for $dev"
 	say "  (dry run: nothing has been written to $dev)"
 else
-	layout=$(flxpart --create-standard --esp-size "$esp_mb" "$dev") ||
+	layout=$(flxpart --create-standard --no-flx-sys --esp-size "$esp_mb" "$dev") ||
 		die "flxpart could not partition $dev"
 fi
 
