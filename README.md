@@ -1,5 +1,7 @@
 # FreeLinX base
 
+Current release: **1.0.8** ([release notes](RELEASE-NOTES.md)).
+
 FreeLinX without a desktop: a shell on the console, `xpkg` for everything else.
 
 ```
@@ -68,15 +70,17 @@ the following:
 
 ## Tested
 
-In QEMU, KVM, std VGA, 2 GB, on 2026-10-02:
+In QEMU/KVM with 2 GB RAM, for 1.0.8. The details are in
+[RELEASE-NOTES.md](RELEASE-NOTES.md).
 
-- The live ISO boots to a framebuffer console, and dhcpcd gets an address.
-- `flxinstall` with a preset installs to a 12 GB virtio disk.
-- The installed disk boots, FLX_SYS engages (7 trees bound), and the login works.
-- `xpkg update` and `xpkg install jq` fetch over HTTPS from the signed repository.
-- A file in `/root` and the installed package are still there after a reboot.
+- **BIOS:** live boot, an install with presets, boot from the disk, login,
+  `xpkg install` over HTTPS, and a reboot that keeps a file and a package.
+- **UEFI (OVMF):** an install answered by hand with no presets, boot from the
+  disk, login as root and as the user.
+- **Console:** a framebuffer console with bochs VGA, and with `simpledrm` alone.
+- **WiFi:** WPA2 against `mac80211_hwsim` + `hostapd`.
 
-Not tested: real hardware.
+Not tested yet: real hardware.
 
 ## Not shipped any more
 

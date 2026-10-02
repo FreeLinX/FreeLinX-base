@@ -42,6 +42,11 @@ Then boot the disk (`-boot c`, no `-cdrom`) and check the following:
 
 ## Publish
 
-Attach the ISO and its `.sha256` to a GitHub release of FreeLinX/FreeLinX-base.
-Use the same version as the desktop release it was cut from (`VERSION`, default
-1.0.7).
+1. Put the version in `VERSION`. It goes into `/etc/os-release`, the banner
+   and the boot menu.
+2. Commit, tag `v<VERSION>`, push.
+3. Build from a clean FreeLinX-desk tree (`mkrootfs.sh` refuses uncommitted
+   changes there) and test as above.
+4. `gh release create v<VERSION> out/freelinx-base-x86_64.iso
+   out/freelinx-base-x86_64.iso.sha256 -R FreeLinX/FreeLinX-base
+   -F RELEASE-NOTES.md`

@@ -55,6 +55,15 @@ CHECK_NOGNU=$DESK/check-nognu.sh
 [ -f "$CHECK_NOGNU" ] || die "no check-nognu.sh at $CHECK_NOGNU"
 ls "$PKGS"/*.xpkg >/dev/null 2>&1 || die "no packages in $PKGS"
 
+# The rootfs is copied from the working tree, so uncommitted work would ship
+# in an image no commit describes.  ALLOW_DIRTY=1 for a test build.
+if [ "${ALLOW_DIRTY:-0}" != 1 ] && git -C "$DESK" rev-parse >/dev/null 2>&1; then
+	dirty=$(git -C "$DESK" status --porcelain -- src/rootfs)
+	[ -z "$dirty" ] || die "uncommitted changes in $SRC (ALLOW_DIRTY=1 to build anyway):
+$dirty"
+	say "==> desktop tree at $(git -C "$DESK" rev-parse --short HEAD)"
+fi
+
 xpkg() { NO_COLOR=1 "$MUSL_RUN" "$XPKG" --root "$STAGE" "$@"; }
 
 # The packages base keeps.  Everything else in the stack is the desktop.

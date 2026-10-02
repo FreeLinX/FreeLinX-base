@@ -85,6 +85,29 @@ fi
 find "$STAGE" -name .gitkeep -type f -exec rm -f {} +
 printf '%s\n' "$VERSION" >"$STAGE/etc/flx-base-version"
 
+# The version base is released as.  /init compares VERSION_ID with the one
+# recorded on FLX_SYS to decide whether an installed system's files need
+# refreshing, flxinstall names the boot entries after it, and /init rewrites
+# the " FreeLinX x.y.z" banner line in that exact form.
+cat >"$STAGE/etc/os-release" <<EOF
+NAME=FreeLinX
+ID=freelinx
+VERSION="$VERSION (base)"
+VERSION_ID="$VERSION"
+VERSION_CODENAME=base
+PRETTY_NAME="FreeLinX $VERSION base"
+ANSI_COLOR="1;36"
+BUILD_ID="$VERSION"
+HOME_URL="https://github.com/FreeLinX"
+SUPPORT_URL="https://github.com/FreeLinX"
+BUG_REPORT_URL="https://github.com/FreeLinX/FreeLinX-base/issues"
+EOF
+for f in etc/motd etc/issue; do
+	[ -f "$STAGE/$f" ] || continue
+	sed -i "s/^ FreeLinX 1\.0[0-9.]*\$/ FreeLinX $VERSION/" "$STAGE/$f"
+	grep -q "^ FreeLinX $VERSION\$" "$STAGE/$f" || die "$f has no version line"
+done
+
 # The gate again, on what is actually packed (firmware included).
 sh "$DESK/check-nognu.sh" "$STAGE" >"$WORK/nognu.txt" 2>&1 || {
 	grep '^FAIL' "$WORK/nognu.txt" >&2
