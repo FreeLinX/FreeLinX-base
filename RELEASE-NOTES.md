@@ -1,3 +1,29 @@
+# FreeLinX base 1.0.10
+
+```
+freelinx-base-x86_64.iso   279 MB   BIOS and UEFI
+sha256  0a4900402a8c53d87e9af14726f157ef15694007576918234b7e3b295905f030
+```
+
+More fixes found by using 1.0.9:
+
+- **A welcome on the live console.** tty1 shows the FreeLinX banner, the
+  version, how to install and where to find help. It also says this is the
+  live system, where nothing is kept until you install it.
+- **Arrow keys, history and Tab completion.** The NetBSD `/bin/sh` is built
+  without line editing, so the arrows printed `^[[A`. The login shell is now
+  `mksh` (MirBSD Korn shell) for root, for the users `flxinstall` creates, and
+  on the consoles. `/bin/sh` stays as it was for scripts.
+- **`cc` compiles.** tcc was shipped without libc headers, start files or its
+  runtime, so even hello world failed on `stdio.h` and `crt1.o`. It now has
+  musl's headers, the kernel headers and `libtcc1.a`.
+- **`file` works.** Its magic database came from an older version and every
+  call failed with `not a multiple of 432`.
+
+Tested in QEMU: the banner and arrow-key history on tty1, Tab completion, a C
+program compiled and run on the live system and on an installed one, the new
+user's shell, and `file`.
+
 # FreeLinX base 1.0.9
 
 ```
