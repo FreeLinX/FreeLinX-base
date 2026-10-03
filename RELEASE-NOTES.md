@@ -2,7 +2,7 @@
 
 ```
 freelinx-base-x86_64.iso   279 MB   BIOS and UEFI
-sha256  @SHA@
+sha256  dd79fc63fe09f6bda2cd333bcc1ee41251dff722bffeda5c000eb925bf4c1205
 ```
 
 **xsetup is the installer again.** `flxinstall` is no longer on the base image.
